@@ -15,6 +15,7 @@
 | `state-transition` | 至少 1 條 — UI 狀態變化（loading → loaded / disabled → enabled / collapsed → expanded） | `visual-state` 或 `locator` | 條件必填 — operation 涉及狀態變化時必填 |
 | `a11y` | 至少 1 條 — 鍵盤可達性 / aria-live announce / focus management | `locator` 或 `visual-state` | 條件必填 — operation 涉及 dialog / async 反應時必填 |
 | `cross-actor` | 至少 1 條 — 訪客 vs 登入使用者 vs 不同角色的合法性差異 | `locator` 或 `route` | 條件必填 — operation 有 actor permission gate 時必填 |
+| `passive-sync` | 至少 1 條 — shared-state transition 對非 command actor 的被動更新 / 導頁 | `route` +（有 observation binding 時）`api-binding`，或 `visual-state` | 條件必填 — operation 影響同一房間/多人/session 內其他 active actor 時必填，除非 intent 明確 manual-refresh / out-of-scope |
 
 ---
 
@@ -27,6 +28,7 @@
 | `state-transition` | BE operation 是 async / 長時 / 改變物件狀態（toggle / publish / archive） |
 | `a11y` | operation 觸發 dialog / 跳轉 / 異步反饋；TLB.role 為 frontend 且 a11y 為產品宣告 baseline |
 | `cross-actor` | OpenAPI security 有條件分支；BE `.feature` Background 含多角色 |
+| `passive-sync` | FE intent `multi_actor_sync.sync_policy == auto-sync`；或 shared room/game/status operation 同時有 active actor 與 affected actor |
 
 ---
 
@@ -34,10 +36,10 @@
 
 每個 has-ui operation 在 `${PLAN_REPORTS_DIR}/discovery-uiux-sourcing.md` 的 `## Coverage Matrix` 章節以下表呈現：
 
-| op_id | happy | error | state-transition | a11y | cross-actor |
-|---|---|---|---|---|---|
-| `submitRefund` | ✅ 2 rules | ✅ 1 rule | ✅ 1 rule | ✅ 1 rule | ➖ 不適用 |
-| `listOrders` | ✅ 1 rule | ❌ MISSING | ➖ 不適用 | ➖ 不適用 | ✅ 1 rule |
+| op_id | happy | error | state-transition | a11y | cross-actor | passive-sync |
+|---|---|---|---|---|---|---|
+| `submitRefund` | ✅ 2 rules | ✅ 1 rule | ✅ 1 rule | ✅ 1 rule | ➖ 不適用 | ➖ 不適用 |
+| `startGame` | ✅ 2 rules | ✅ 1 rule | ✅ 1 rule | ✅ 1 rule | ✅ 1 rule | ❌ MISSING |
 
 ### §3.1 標記語意
 
@@ -62,6 +64,7 @@
 | `rules_by_verification_mode.visual-state` | verification_mode == visual-state 的 rule 數 |
 | `rules_by_verification_mode.route` | verification_mode == route 的 rule 數 |
 | `rules_by_verification_mode.api-binding` | verification_mode == api-binding 的 rule 數 |
+| `passive_sync_gap_ops` | passive-sync 必填但缺 observation binding / route rule / explicit defer 的 operation 清單 |
 | `coverage_gap_ops` | 至少一個必填維度為 MISSING 的 operation 清單 |
 
 ---
@@ -75,6 +78,7 @@
 | `state-transition` 為 MISSING 且 §2 觸發 | `F4_STATE_TRANSITIONS` | 必補；回 Phase 4 |
 | `a11y` 為 MISSING 且 §2 觸發 | （無對應 rule_id；歸 SOFT gap） | 在 sourcing report 標 GAP；不阻擋通關但下游 plan / draw 必須處理 |
 | `cross-actor` 為 MISSING 且 §2 觸發 | `F3_ACTOR_RULES` | 必補；回 Phase 4 |
+| `passive-sync` 為 MISSING 且 §2 觸發 | `UIUX_PASSIVE_ACTOR_SYNC_DECIDED` | 必補 passive sync Rule，或以 explicit GAP / manual-refresh assumption 標出 |
 | has-ui operation 完全沒對應 feature | `UIUX_BE_OPERATION_COVERAGE` | HARD fail；回 Phase 4 |
 | Rule 缺 `verification_mode` | `UIUX_VERIFICATION_MODE_PRESENT` | HARD fail；回 Phase 4 |
 

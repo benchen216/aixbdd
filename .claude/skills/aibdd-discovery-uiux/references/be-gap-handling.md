@@ -30,6 +30,7 @@
 | `BG-006` | BE shared DSL 缺 actor catalog | (A) 採 activity header 出現過的 actor (B) 採 Background 出現過的 actor (C) 採 raw idea 提到的人設 |
 | `BG-007` | BE activity 多 source 同一 op_id 但 verb 不一致（CiC(CON)） | (A) FE 採 activity verb；衝突 forwarded (B) FE 採 feature rule verb；衝突 forwarded |
 | `BG-008` | OpenAPI `x-uat-flow` 缺，且 activity / feature tag 皆無對應 | (A) FE 暫定獨立 flow（無 cross-op composition）(B) FE 與其他 op 合併為 composite flow（需配合 intent.page_composition） |
+| `BG-009` | FE intent 要求被動 actor 觀察 shared-state transition，但 OpenAPI 無 read/status/stream observation operation 可綁定 | (A) FE 將被動同步標為 observation-source gap 並 forwarded (B) FE 採 manual refresh / re-entry assumption (C) FE 僅在既有 observation operation 可安全綁定時 cover auto-sync |
 
 > **invariant**：本表 options 欄位**禁止**出現任何「請修改 / 補完 / 回填 BE」字樣；違反即 rubric `UIUX_NO_BE_MUTATION_LEAK` fail。
 
@@ -77,6 +78,7 @@ ask BE team to patch
 |---|---|---|
 | `02-operation-classify` | `chosen_option_id` per BE op | classification.reasoning 必須引用 `discovery-uiux-be-gap.md` pointer，而不是把 BE 衝突直接寫進 classification 字句 |
 | `03-userflow-derive` | `BG-003` / `BG-004` / `BG-007` resolution | 對 actor / decision / verb 衝突採已選 assumption 推 userflow |
+| `03-userflow-derive` | `BG-009` resolution | 對 passive actor sync 決定 observation binding / manual-refresh assumption / forwarded gap |
 | `04-fe-atomic-rules` | `BG-002` / `BG-005` resolution | 對 error state / response shape 採已選 assumption 推 Rule preset |
 
 ---

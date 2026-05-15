@@ -98,14 +98,14 @@ modeling_element_definition:
       role: "跨 artifact / 多 RP 才能浮現的殘留模糊；不歸屬任何單一上游 RP"
       fields:
         question_id: string                # res-Q<n>
-        dimension: enum                    # cross-rule-consistency | terminal-coverage | actor-mismatch | gap-revisit | gate-soft-warn
+        dimension: enum                    # cross-rule-consistency | terminal-coverage | actor-mismatch | permission-visual-ambiguity | passive-sync-missing | observation-source-missing | gap-revisit | gate-soft-warn
         concern: string
         evidence_paths: list<string>       # 對應的 artifact 檔路徑
         options: list<string>
         recommendation: string
         rationale: string
       invariants:
-        - "dimension 必為 enum 五值之一"
+        - "dimension 必為 enum 八值之一"
         - "evidence_paths 非空（殘留必須可被使用者 trace）"
 ```
 
@@ -120,9 +120,16 @@ modeling_element_definition:
    - terminal 標 success 但無對應 happy rule
    - terminal 標 error 但無對應 error rule（且 §2 觸發 error 必填）
 3. `$actor_mismatch` = THINK 掃 activity actor vs feature Background actor 是否一致
-4. `$gap_revisit` = THINK 掃 GAP report no-ui operations 是否有 revisit_trigger 缺漏
-5. `$soft_warn` = THINK 掃 quality_verdict.rule_results 中 SOFT 等級命中項（a11y / state-transition 對應）
-6. `$residual_questions` = DERIVE ResidualQuestion list ← union(`$cross_rule_consistency`, `$terminal_coverage`, `$actor_mismatch`, `$gap_revisit`, `$soft_warn`)
+4. `$permission_visual_ambiguity` = THINK 掃 role-restricted controls：
+   - Rule body / feature text 含 `hidden-or-disabled`、`隱藏或停用`、`hidden-or-disabled` 且同 feature 又有 click/error Example 或 api-binding assertion
+   - disallowed actor control 沒有具體 hidden / disabled / clickable-error policy trace
+5. `$passive_sync_missing` = THINK 掃 shared-state transitions：
+   - UATFlow / feature 有 active command route，但 affected actor 沒有 passive sync Rule，也沒有 manual-refresh / out-of-scope GAP trace
+6. `$observation_source_missing` = THINK 掃 passive auto-sync：
+   - passive sync Rule 存在但沒有 observation_binding / api-binding，且 GAP report 無 BG-009 trace
+7. `$gap_revisit` = THINK 掃 GAP report no-ui operations 是否有 revisit_trigger 缺漏
+8. `$soft_warn` = THINK 掃 quality_verdict.rule_results 中 SOFT 等級命中項（a11y / state-transition 對應）
+9. `$residual_questions` = DERIVE ResidualQuestion list ← union(`$cross_rule_consistency`, `$terminal_coverage`, `$actor_mismatch`, `$permission_visual_ambiguity`, `$passive_sync_missing`, `$observation_source_missing`, `$gap_revisit`, `$soft_warn`)
 
 ---
 

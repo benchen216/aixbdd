@@ -84,9 +84,9 @@ references:
   - path: references/userflow-rule-coverage.md
     purpose: frontend Rule coverage matrix — happy / error / state-transition / a11y / cross-actor 必填項
   - path: references/fe-intent-contract.md
-    purpose: raw idea 收斂 SSOT — fe_intent_bundle schema / 7 類 Seam 0 題型 / 下游消費規約 / intent ↔ BE alignment matrix shape
+    purpose: raw idea 收斂 SSOT — fe_intent_bundle schema / Seam 0 題型 / 下游消費規約 / intent ↔ BE alignment matrix shape
   - path: references/be-gap-handling.md
-    purpose: BE truth 對 FE 用途不足時的 FE-side 補位契約 — BG-001..BG-008 偵測規則 / 候選 supplement options / NO_BE_MUTATION_LEAK invariant
+    purpose: BE truth 對 FE 用途不足時的 FE-side 補位契約 — BG-001..BG-009 偵測規則 / 候選 supplement options / NO_BE_MUTATION_LEAK invariant
 ```
 
 ## §2 SOP
@@ -215,22 +215,33 @@ references:
    3.10 WRITE `${PLAN_REPORTS_DIR}/discovery-uiux-be-gap.md` ← `$be_gap_final`
 
 4. `$intent_sourcing` = MARK "RP 00 — derive fe_intent_bundle + fire Seam 0 intent clarify-loop"
-   4.1 LOAD REF [`references/fe-intent-contract.md`](references/fe-intent-contract.md) — FE intent bundle schema + 7 類 Seam 0 題型
+   4.1 LOAD REF [`references/fe-intent-contract.md`](references/fe-intent-contract.md) — FE intent bundle schema + Seam 0 題型
    4.2 `$raw_idea` = DERIVE `$$runtime_context.LAST_USER_PROMPT`（缺欄視為空字串）
    4.3 `$intent_out` = THINK per [`reasoning/discovery-uiux/00-fe-intent-sourcing.md`](reasoning/discovery-uiux/00-fe-intent-sourcing.md), input={raw_idea: `$raw_idea`, operation_inventory: `$operation_inventory_draft`, be_truth: `$$be_truth_bundle`}
    4.4 `$$fe_intent_bundle` = DERIVE `$intent_out.fe_intent_bundle`
    4.5 `$intent_questions` = DERIVE `$intent_out.clarify_payload.questions`
    4.6 `$intent_draft` = DRAFT intent report draft ← `$raw_idea`, `$$fe_intent_bundle`, `$intent_questions`；含 raw idea verbatim fenced block + alignment_matrix table + `## Open Intent Questions` section per [`references/fe-intent-contract.md`](references/fe-intent-contract.md) §5
    4.7 WRITE `${PLAN_REPORTS_DIR}/discovery-uiux-intent.md` ← `$intent_draft`
-   4.8 IF length(`$intent_questions`) == 0：GOTO #2.5.1
+   4.8 IF length(`$intent_questions`) == 0：GOTO #2.4.13
    4.9 [USER INTERACTION] `$intent_clarify_report` = DELEGATE `/clarify-loop`，附上 `$intent_questions` + `located_file_path = ${PLAN_REPORTS_DIR}/discovery-uiux-intent.md` + `located_anchor_section = "Open Intent Questions"`
    4.10 WAIT for `$intent_clarify_report`
    4.11 IF `$intent_clarify_report.status == incomplete`:
         4.11.1 EMIT "Seam 0 (FE intent) 的 clarify-loop 回 incomplete；draft report 留檔，請補完題組後重跑" to user
         4.11.2 STOP
-   4.12 `$$fe_intent_bundle` = DERIVE 把 `$intent_clarify_report.answers` 整合進 `$$fe_intent_bundle`（填回 scope_decisions / page_compositions / actor_splits / state_axis_priority / brand_seed unknown 欄位）
+   4.12 `$$fe_intent_bundle` = DERIVE 把 `$intent_clarify_report.answers` 整合進 `$$fe_intent_bundle`（填回 scope_decisions / page_compositions / actor_splits / multi_actor_sync / state_axis_priority / brand_seed unknown 欄位）
    4.13 `$intent_final` = DRAFT final intent report ← `$raw_idea`, `$$fe_intent_bundle`；section 改為 raw idea verbatim + alignment_matrix + `## Resolved Intent Decisions`
    4.14 WRITE `${PLAN_REPORTS_DIR}/discovery-uiux-intent.md` ← `$intent_final`
+   4.15 `$intent_dependent_be_gaps` = DERIVE per `$$fe_intent_bundle.multi_actor_sync`：若 `sync_policy == auto-sync` 且 sibling OpenAPI 無 read/status/stream observation operation 可綁定，追加 BEGapFinding(`BG-009`) 到 `$$be_gap_findings`；若 `sync_policy ∈ {manual-refresh,out-of-scope}`，只把 decision trace 寫入 intent report，不追加 gap
+   4.16 IF `$intent_dependent_be_gaps` 追加了 `BG-009` 且 `chosen_option_id` 為空：
+        4.16.1 `$be_gap_refresh` = DRAFT BE gap report draft ← `$$be_gap_findings`；含 `## BE Gaps Detected` + `## Open BE Supplementation Questions`
+        4.16.2 WRITE `${PLAN_REPORTS_DIR}/discovery-uiux-be-gap.md` ← `$be_gap_refresh`
+        4.16.3 [USER INTERACTION] `$be_gap_observation_clarify` = DELEGATE `/clarify-loop`，附上 BG-009 questions + `located_file_path = ${PLAN_REPORTS_DIR}/discovery-uiux-be-gap.md` + `located_anchor_section = "Open BE Supplementation Questions"`
+        4.16.4 WAIT for `$be_gap_observation_clarify`
+        4.16.5 IF `$be_gap_observation_clarify.status == incomplete`:
+             4.16.5.1 EMIT "Seam 0' (observation source) 的 clarify-loop 回 incomplete；draft report 留檔，請補完題組後重跑" to user
+             4.16.5.2 STOP
+        4.16.6 `$$be_gap_findings` = DERIVE 把 `$be_gap_observation_clarify.answers` 整合回 `BG-009`
+        4.16.7 WRITE `${PLAN_REPORTS_DIR}/discovery-uiux-be-gap.md` ← final BE gap report
 
 5. `$draft_sourcing` = MARK "classify operations (intent + be_gap aware) and write draft sourcing report as Seam A anchor"
    5.1 LOAD REF [`references/be-to-fe-mapping.md`](references/be-to-fe-mapping.md) §1 — has-ui / no-ui 分類 rubric
@@ -414,6 +425,9 @@ Planner 禁止 self-judge — DELEGATE 至獨立 subagent，依下表 rubric 評
 | `F2_EDGE_CASES` | edge / error path 有 Rules 或 explicit CiC markers |
 | `F3_ACTOR_RULES` | 每個 Actor 都有對應的合法性 / 授權規則 |
 | `F4_STATE_TRANSITIONS` | 重要 state transitions 有 Rules |
+| `UIUX_ACTOR_PERMISSION_VISUAL_DECIDED` | role-restricted control 必須有具體 visual policy（hidden / disabled / clickable-error）；不得只留下 hidden-or-disabled 與可點擊 Example 矛盾 |
+| `UIUX_PASSIVE_ACTOR_SYNC_DECIDED` | shared-state transition 影響其他 active actor 時，必須有 passive sync Rule 或 explicit manual-refresh / out-of-scope GAP trace |
+| `UIUX_OBSERVATION_SOURCE_BOUND` | passive auto-sync Rule 必須綁定 observation source（read/status/stream operation）或對應 BG-009 forwarded gap |
 | `UIUX_VERIFICATION_MODE_PRESENT` | 每條 Rule 必標 verification_mode ∈ {locator, visual-state, route, api-binding} |
 | `UIUX_NO_BE_VERB_LEAK` | Rule 不得出現 backend 黑名單動詞（POST / persist / 200 / database / API / commit transaction 等） |
 | `UIUX_BE_OPERATION_COVERAGE` | 每個 has-ui operation ≥1 frontend feature |

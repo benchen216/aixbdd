@@ -87,6 +87,7 @@ required_axis:
       - navigation_topology
       - ux_only_flows
       - actor_splits
+      - multi_actor_sync
     completeness_check:
       rule: page_compositions / actor_splits 至少 placeholder 存在；ux_only_flows 可為空 list
       on_missing: STOP
@@ -145,6 +146,23 @@ modeling_element_definition:
         terminal_id: string
         kind: enum                        # success | error | abandoned
         visual_outcome: string            # 對應 visual-state preset 之一
+    CrossActorTransition:
+      role: "shared-state operation 對非 command actor 的被動 UX transition"
+      fields:
+        transition_id: string
+        source_op_id: string
+        command_actor: string
+        affected_actor: string
+        from_state: string
+        to_state: string
+        expected_ui_outcome: enum         # route | visual-state | notification | none
+        sync_policy: enum                 # auto-sync | manual-refresh | out-of-scope
+        observation_binding: string | null
+        be_gap_assumption_refs: list<string>
+      invariants:
+        - "sync_policy == auto-sync → observation_binding 非空或 be_gap_assumption_refs 含 BG-009"
+        - "sync_policy == out-of-scope → 不產生 route/visual-state Rule，只在 GAP/report trace"
+        - "command_actor != affected_actor"
     UIVerbBinding:
       role: "把 uat_flow action 的動詞綁到 UI verb catalog 的一條對應；reuse aibdd-discovery 04b 規格"
       fields:
@@ -196,34 +214,41 @@ modeling_element_definition:
    - 套用 `$composition_lookup`：composite cardinality 合併同 composition 下的 UATFlow steps；wizard-step cardinality 串成 sequence；branch-by-entry 拆分為多 UATFlow（共享 be_op_id）
    - 套用 `$actor_lookup`：UATFlow.actor 採 split 後 persona
    - 套用 `$be_gap_lookup`：BG-004 衝突採 chosen actor；BG-007 衝突採 chosen verb；對應 detect_id 寫入 UATFlow.be_gap_assumption_refs
-5. `$ux_only_flows` = DERIVE per `fe_intent_bundle.ux_only_flows`：物化為 UATFlow with `be_op_id: null`；steps 由 trigger_quote + proposed_anchor 拼出 minimal `action → terminal` 序列
-6. `$ui_verb_bindings` = DERIVE per UATFlowStep（kind == action）：
+5. `$cross_actor_transitions` = DERIVE per `fe_intent_bundle.multi_actor_sync`：
+   - `sync_policy == auto-sync` → 物化 passive affected-actor UATFlow（entry_trigger=observation event / polling tick / route revalidation），並建立 CrossActorTransition
+   - `sync_policy == manual-refresh` → 建立 CrossActorTransition(expected_ui_outcome=none)，終端寫明 manual refresh / re-entry assumption，不產生自動導頁 Rule
+   - `sync_policy == out-of-scope` → 不建 passive UATFlow，只保留 trace 供 GAP / report
+   - `sync_policy == auto-sync` 且 `observation_binding == null` → CrossActorTransition.be_gap_assumption_refs 必含 `BG-009`，並在 clarify_payload 或 upstream gap report 保留 unresolved trace
+6. `$ux_only_flows` = DERIVE per `fe_intent_bundle.ux_only_flows`：物化為 UATFlow with `be_op_id: null`；steps 由 trigger_quote + proposed_anchor 拼出 minimal `action → terminal` 序列
+7. `$ui_verb_bindings` = DERIVE per UATFlowStep（kind == action）：
    - lemma 對應 catalog `ui_verb`；對應不上 → FrontendLensCiC(GAP)
    - 黑名單動詞命中（POST / persist / 200 等）→ FrontendLensCiC(ASM)
-7. `$anchor_candidates` = DERIVE per UIVerbBinding：
+8. `$anchor_candidates` = DERIVE per UIVerbBinding：
    - role ← frontend-rule-axes §3 mapping
    - accessible_name ← source_verb + object verbatim quote
    - 同義改寫 → FrontendLensCiC(ASM)
-8. `$state_hints` = DERIVE per AnchorCandidate：
+9. `$state_hints` = DERIVE per AnchorCandidate：
    - base ← §5.1 對應 role 預設集
    - domain ← BE activity DECISION 分支推得（loading / empty / error / populated / pristine）
-9. `$pattern4_findings` = THINK Pattern 4 Frontend Lens 檢查（backend-verb leak / accessible_name 同義改寫 / role 黑名單 / 自生 anchor）
-10. `$clarify_payload` = DERIVE per FrontendLensCiC + step order 模糊：
+10. `$pattern4_findings` = THINK Pattern 4 Frontend Lens 檢查（backend-verb leak / accessible_name 同義改寫 / role 黑名單 / 自生 anchor）
+11. `$clarify_payload` = DERIVE per FrontendLensCiC + step order 模糊 + unresolved CrossActorTransition：
     - 每筆 finding 補一道 question；id=`flow-Q<n>`；options=[A: 採 BE 來源 verbatim, B: 補 catalog, C: split-flow]（**禁** "改 BE" 字樣）
+    - 每筆 `sync_policy == auto-sync` 但 observation binding / BG-009 resolution 不足者補一道 passive-sync question
 
 ---
 
 ## 4. Material Reducer SOP
 
 1. `$reducer_output` = DERIVE uat_flows + frontend_lens + clarify_payload：
-   - `uat_flows = {items: concat($flows_raw, $ux_only_flows)}`
+   - `uat_flows = {items: concat($flows_raw, passive flows from $cross_actor_transitions, $ux_only_flows), cross_actor_transitions: $cross_actor_transitions}`
    - `frontend_lens = {ui_verb_bindings: $ui_verb_bindings, anchor_candidates: $anchor_candidates, state_axes_hints: $state_hints, cic_marks: $pattern4_findings, clarify_payload: $clarify_payload}`
 2. ASSERT 每個 UATFlow.be_op_id 非 null 時必對應到 classification has-ui 子集；be_op_id == null 時必對應到 `fe_intent_bundle.ux_only_flows`
 3. ASSERT 每個 modeled UATFlowStep.kind=action 都有對應 UIVerbBinding；資訊性 step 例外
 4. ASSERT 每個 UIVerbBinding 都有對應 AnchorCandidate（informational 例外）
 5. ASSERT 無 accessible_name 與 source_quote lemma 不一致
 6. ASSERT 每個 UATFlow.be_gap_assumption_refs 條目都能在 `be_gap_findings.items[].detect_id` 找到對應；reasoning 引用 GAP report pointer
-7. ASSERT 每筆 clarify question option label 不含 [`../../references/be-gap-handling.md`](../../references/be-gap-handling.md) §3 forbidden phrase
+7. ASSERT 每筆 CrossActorTransition invariants 成立；若 auto-sync 無 observation binding 且無 BG-009，必產生 clarify question
+8. ASSERT 每筆 clarify question option label 不含 [`../../references/be-gap-handling.md`](../../references/be-gap-handling.md) §3 forbidden phrase
 
 Return:
 

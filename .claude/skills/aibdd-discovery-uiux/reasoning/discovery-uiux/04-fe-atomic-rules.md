@@ -179,7 +179,7 @@ modeling_element_definition:
         - "rules 非空"
         - "rules 中至少有 1 條 coverage_dimension == happy"
     CoverageRow:
-      role: "對應一個 has-ui BEOperation 在 5 個 coverage 維度上的 rule 數統計"
+      role: "對應一個 has-ui BEOperation 在 coverage 維度上的 rule 數統計"
       fields:
         be_op_id: string
         happy: int
@@ -187,6 +187,7 @@ modeling_element_definition:
         state_transition: int | null
         a11y: int | null
         cross_actor: int | null
+        passive_sync: int | null
         intent_priority_snapshot:
           error: enum                      # must-cover | optional | skip
           empty: enum
@@ -196,6 +197,21 @@ modeling_element_definition:
         - "happy ≥ 1（必填維度）"
         - "其他維度依 userflow-rule-coverage §2 觸發條件 + intent_priority_snapshot 決定 null vs int"
         - "intent_priority_snapshot.error == skip ⇒ error 必為 null（CoverageRow 不視為 gap）"
+    ActorPermissionControl:
+      role: "role-restricted control 的 disallowed-actor UI policy；避免 Rule 說 hidden/disabled 但 Example 去 click"
+      fields:
+        op_id: string
+        allowed_actor: string
+        disallowed_actor: string
+        control_anchor:
+          role: string
+          accessible_name: string
+        visual_policy: enum              # hidden | disabled | clickable-error | unknown
+        source: enum                     # be-security | feature-rule | clarify-answer
+      invariants:
+        - "visual_policy == unknown → 必產生 Seam C clarify question"
+        - "visual_policy ∈ {hidden,disabled} → 不產生 disallowed actor click api-binding rule"
+        - "visual_policy == clickable-error → 必產生 error visual-state rule，且可產生 api-binding rule"
     AtomicRuleCiC:
       role: "verification_mode 模糊 / coverage gap / be-op binding 缺漏 便條紙；轉入 clarify_payload"
       fields:
@@ -211,7 +227,11 @@ modeling_element_definition:
 
 1. `$state_priority` = READ fe_intent_bundle.state_axis_priority
 2. `$be_gap_lookup` = DERIVE per has-ui op：對應 `be_gap_findings.items` 中 BG-002 / BG-005 chosen_option_id
-3. `$rules_raw` = DERIVE per UIVerbBinding：
+3. `$actor_permission_controls` = DERIVE per has-ui op：
+   - OpenAPI security / BE feature role wording / UATFlow actor split 顯示 allowed vs disallowed actor 時建立 ActorPermissionControl
+   - 若來源只寫 `hidden-or-disabled` / `hidden-or-disabled-or-error` 或沒有明示 policy → `visual_policy=unknown`
+   - 若 clarify answer 已明示 → visual_policy ∈ {hidden, disabled, clickable-error}
+4. `$rules_raw` = DERIVE per UIVerbBinding：
    - 取對應 AnchorCandidate
    - 依 ui_verb category 決定預設 verification_mode：
      - input / state-change → 至少 1 條 locator + （如果觸發 BE 副作用）1 條 api-binding
@@ -220,32 +240,44 @@ modeling_element_definition:
    - 渲染 Rule body ← verification-semantics-presets §2 對應 preset 樣板
    - 標 coverage_dimension：先預設 happy；error / state-transition / a11y / cross-actor 由下一步補
    - 標 intent_priority_trace：依 coverage_dimension 對應 axis（happy → must-cover；error / empty / loading / partial → 取 `$state_priority` 對應）
-4. `$rules_extra` = DERIVE 補 error / state-transition / a11y / cross-actor 維度（依 `$state_priority` 過濾）：
+5. `$rules_extra` = DERIVE 補 error / state-transition / a11y / cross-actor 維度（依 `$state_priority` 過濾）：
    - error axis priority ∈ {must-cover, optional} ∧ BE feature 有 fail Scenario 或 Decision branch 有失敗 → 補 error visual-state rule；priority == skip → 不補
    - BG-002 chosen_option == "FE 主動 cover error state" → 補 error rule 並寫入 be_gap_assumption_refs
    - BG-005 chosen_option 影響 response shape → 對渲染欄位 rule 的 be_operation_binding 採已選 assumption
    - 對 BE op async 或 state change → 補 state-transition rule（套 `$state_priority.loading` 與 `partial`）
    - 對 BE op 觸發 dialog / async 反應 → 補 a11y rule
    - 對 BE op security 有多 actor 條件 → 補 cross-actor rule
-5. `$ux_only_rules` = DERIVE per UATFlow with be_op_id == null：
+   - per ActorPermissionControl：
+     - `hidden` → 補 locator/visual-state rule：disallowed actor 看不到 control
+     - `disabled` → 補 locator rule：disallowed actor 看到 disabled control
+     - `clickable-error` → 補 visual-state error rule；如需驗證外發呼叫才補 api-binding
+     - `unknown` → AtomicRuleCiC(BDY) 並進 clarify_payload，不得渲染含糊 `hidden-or-disabled` rule
+   - per UATFlow.cross_actor_transitions：
+     - passive auto-sync with observation binding → 補 route 或 visual-state rule + api-binding observation rule
+     - manual-refresh / out-of-scope → 不補自動導頁 rule，保留 GAP/report trace
+6. `$ux_only_rules` = DERIVE per UATFlow with be_op_id == null：
    - 對每條 UIVerbBinding 生成 locator / visual-state / route rule（禁 api-binding）
    - intent_priority_trace 依 state_axis_priority；happy 仍必含
-6. `$features` = DERIVE FeatureBundle per has-ui BEOperation + per ux-only UATFlow：
+7. `$features` = DERIVE FeatureBundle per has-ui BEOperation + per ux-only UATFlow：
    - target_path = `${FEATURE_SPECS_DIR}/<be_op_slug>.feature` 或 `${FEATURE_SPECS_DIR}/<ux_flow_slug>.feature`
    - rules = $rules_raw ∪ $rules_extra 過濾 be_op_id 對應；ux-only 取 `$ux_only_rules`
-7. `$coverage_matrix` = DERIVE CoverageRow per has-ui BEOperation：
-   - happy / error / state-transition / a11y / cross-actor 數量統計
+8. `$coverage_matrix` = DERIVE CoverageRow per has-ui BEOperation：
+   - happy / error / state-transition / a11y / cross-actor / passive-sync 數量統計
    - 不適用維度（依 userflow-rule-coverage §2 觸發條件未命中）→ null
    - 套用 `$state_priority`：skip 維度強制 null（不視為 gap）
    - intent_priority_snapshot = `$state_priority` 快照
-8. `$cic_marks` = THINK 標 AtomicRuleCiC：
+9. `$cic_marks` = THINK 標 AtomicRuleCiC：
    - rule.verification_mode 缺 → CiC(GAP)
    - rule.body 含 backend-verb 黑名單 → CiC(ASM)
    - happy 維度為 0 → CiC(BDY) coverage-gap
    - api-binding mode 缺 be_operation_binding（且 be_op_id 非 null）→ CiC(BDY)
    - 任一 must-cover 維度 == 0 → CiC(BDY) coverage-gap
+   - ActorPermissionControl.visual_policy == unknown → CiC(BDY) permission-visual-ambiguity
+   - passive auto-sync transition 缺 observation binding 且無 BG-009 resolution → CiC(BDY) observation-source-missing
    - optional 維度 == 0 → 記 GAP（不入 clarify_payload，僅供 Phase 5 §5.B 軟提醒）
-9. `$clarify_payload` = DERIVE per `$cic_marks` 中 type ∈ {GAP, ASM, BDY} 且非「optional 缺漏」者 → question 題組（id=`rule-Q<n>`；reasoning 帶 "user-declared not must-cover" 註記者另列）
+10. `$clarify_payload` = DERIVE per `$cic_marks` 中 type ∈ {GAP, ASM, BDY} 且非「optional 缺漏」者 → question 題組（id=`rule-Q<n>`；reasoning 帶 "user-declared not must-cover" 註記者另列）
+    - permission-visual-ambiguity 題 options 必包含 hidden / disabled / clickable-error / OTHER
+    - observation-source-missing 題 options 必指向 FE-side assumption / forwarded gap / existing observation binding，不得使用 BE mutation wording
 
 ---
 

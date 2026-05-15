@@ -16,6 +16,7 @@
 | `state_axis_priority` | StateAxisPriority | error / empty / loading / partial 四類 state 的 must-cover / optional / skip |
 | `scope_inclusion` | list<ScopeDecision> | 對每個 has-ui op 是否納入本輪 FE scope（intent=include / exclude / defer） |
 | `actor_split` | list<ActorSplit> | 同一 BE actor 在 UX 上的人設細分（first-time / returning / suspended 等） |
+| `multi_actor_sync` | list<MultiActorSync> | 多人 / 多 client shared-state transition 的被動同步決策；例如房主開始後房客是否自動進入下一階段 |
 | `ux_only_flows` | list<UXOnlyFlow> | raw idea 提到但 BE 無對應 op 的 UX-only userflow（filter / sort / client search） |
 | `brand_seed` | BrandSeed \| null | 為下游 `/aibdd-uiux-discovery` 鋪錨點；可空 |
 | `clarify_payload` | ClarifyPayload | Seam 0 待澄清題組（依 [`aibdd-discovery::references/turn-discipline.md`](aibdd-discovery::references/turn-discipline.md) clarify-loop schema） |
@@ -45,6 +46,16 @@ ActorSplit:
   fe_personas: list<string>         # raw idea 提到的人設細分；至少 1 項
   source: enum                      # raw-idea | clarify-answer
 
+MultiActorSync:
+  source_op_id: string              # 造成 shared-state transition 的 BE op，例如 startGame
+  active_actor: string              # 發出 command 的 persona，例如 host
+  affected_actor: string            # 同房間/同流程被動受影響 persona，例如 guest
+  passive_transition: string        # UX 層 transition，例如 waiting-room -> password-page
+  sync_policy: enum                 # auto-sync | manual-refresh | out-of-scope | unknown
+  sync_mechanism: enum              # polling | websocket-sse | route-revalidation | none | unknown
+  observation_binding: string|null  # getRoom / roomStatus / event name；未知或缺失為 null
+  source: enum                      # raw-idea | be-default | clarify-answer
+
 UXOnlyFlow:
   flow_slug: string
   trigger_quote: string             # raw idea verbatim 引發此 flow 的詞彙
@@ -71,6 +82,7 @@ BrandSeed:
 | `intent-surplus` | raw_idea 含 UX 詞彙（wizard/stepper/modal/filter/sort）但 BE 無對應 op | 「raw idea 提到 `${term}`，BE 無對應 op」 | be-missing-op / ux-only-flow / out-of-scope / OTHER |
 | `intent-composition` | has-ui ops ≥ 2 且 raw idea 未給組合線索 | 「`${op_id_list}` 要合在同 page 還是分開？」 | one-page / wizard / branch-by-entry / multi-page / OTHER |
 | `intent-actor-split` | BE actor=end-user 但 raw idea 暗示分眾 | 「`end-user` 是否需要 split 成 first-time / returning？」 | yes-list-personas / no-single-persona / OTHER |
+| `intent-multi-actor-sync` | BE operation 改變 shared room/game state 且存在多 persona/session，但 raw idea 未說明被動 actor 是否同步 | 「`${source_op_id}` 後，仍停留在目前頁面的 `${affected_actor}` 是否需要自動進入下一階段？」 | auto-sync / manual-refresh / out-of-scope / OTHER |
 | `intent-state-priority` | raw idea 未提錯誤 / 空狀態 / loading 語氣 | 「error / empty / loading / partial 哪幾類必納入 must-cover？」 | multi-select 4 enum + OTHER |
 | `intent-brand-seed` | 為下游 `/aibdd-uiux-discovery` 鋪錨點且 raw idea 無視覺指引 | 「視覺風格錨點？」 | editorial / brutalism / luxury / neutral / OTHER |
 
@@ -101,6 +113,7 @@ BrandSeed:
 | `01-be-sourcing` | （無 — 01 早於 00 完成 BE inventory） | — |
 | `02-operation-classify` | `scope_inclusion` | classification tie-breaker：intent=exclude ∧ BE has-ui 訊號 → 強制 ambiguous（不得 silent has-ui） |
 | `03-userflow-derive` | `page_composition` / `navigation_topology` / `ux_only_flows` / `actor_split` | userflow N:1 / 1:N 組裝；ux_only_flows 物化為 UATFlow with `be_op_id: null`；actor_split 寫進 UATFlow.actor |
+| `03-userflow-derive` | `multi_actor_sync` | shared-state operation 拆成 active command flow 與 passive affected-actor sync flow；若 `sync_policy=auto-sync` 則必須有 observation binding 或 BE gap pointer |
 | `04-fe-atomic-rules` | `state_axis_priority` | coverage matrix 權重；must-cover 缺漏才開 Seam C 題；skip 不入 gap |
 | `06 / Phase 6 report` | `brand_seed` | 報告 pointer，供下游 `/aibdd-uiux-discovery` 參考 |
 

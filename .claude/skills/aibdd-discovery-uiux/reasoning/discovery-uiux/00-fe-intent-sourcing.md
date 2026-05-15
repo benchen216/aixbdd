@@ -36,7 +36,7 @@ produces:
   - name: clarify_payload
     kind: derived_axis
     terminal: false
-    note: 7 類 intent question 任一非空時觸發 Seam 0 clarify-loop
+    note: intent question 任一非空時觸發 Seam 0 clarify-loop
 downstream:
   - discovery-uiux.02-operation-classify
   - discovery-uiux.03-userflow-derive
@@ -115,6 +115,7 @@ modeling_element_definition:
         page_compositions: list<PageComposition>
         scope_decisions: list<ScopeDecision>
         actor_splits: list<ActorSplit>
+        multi_actor_sync: list<MultiActorSync>
         ux_only_flows: list<UXOnlyFlow>
       invariants:
         - "scope_decisions 條目數與 has-ui BE op 一一對應（已知 ambiguous 也須登一筆 unknown）"
@@ -146,6 +147,21 @@ modeling_element_definition:
         source: enum                     # raw-idea | clarify-answer
       invariants:
         - "fe_personas 至少 1 項；同名於 be_actor 視為不 split（不得記錄）"
+    MultiActorSync:
+      role: "多人 / 多 client shared-state transition 的被動同步決策"
+      fields:
+        source_op_id: string
+        active_actor: string
+        affected_actor: string
+        passive_transition: string
+        sync_policy: enum                # auto-sync | manual-refresh | out-of-scope | unknown
+        sync_mechanism: enum             # polling | websocket-sse | route-revalidation | none | unknown
+        observation_binding: string | null
+        source: enum                     # raw-idea | be-default | clarify-answer
+      invariants:
+        - "sync_policy == unknown → 對應 intent-multi-actor-sync question 必存在"
+        - "sync_policy == auto-sync → sync_mechanism != none"
+        - "source=clarify-answer → 必有對應 clarify question_id 在 IntentClarifyQuestion"
     UXOnlyFlow:
       role: "raw idea 提到但 BE 無對應 op 的 UX-only userflow"
       fields:
@@ -192,18 +208,24 @@ modeling_element_definition:
 3. `$nav_topology` = CLASSIFY `$raw` into navigation_topology enum ∈ {dashboard, wizard, spa, multi-page, modal-overlay, unknown}；缺訊號 → unknown
 4. `$state_priority_draft` = CLASSIFY `$raw` 對 error / empty / loading / partial 四軸的提及；缺訊號 → 預設 `{error: must-cover, empty: optional, loading: optional, partial: skip}` 並標 Seam 0 `intent-state-priority` 題
 5. `$actor_signals` = DERIVE per `$be_bundle.activities` + `$raw`：對每個 BE actor 看 raw idea 是否暗示分眾（first-time / returning / suspended 等 lexical marker）
-6. `$brand_signal` = CLASSIFY `$raw` for visual direction lexical markers（editorial / brutalism / luxury / neutral）；缺訊號 → null + Seam 0 `intent-brand-seed` 題
-7. `$composition_draft` = THINK per has-ui op cluster：raw idea 是否明示組合（"在同一頁"／"分步驟"）；缺訊號 ∧ has-ui ops ≥ 2 → 標 Seam 0 `intent-composition` 題
-8. `$clarify_questions` = DERIVE Seam 0 題組 ← 上述各步驟標記之 cic：
+6. `$multi_actor_sync_draft` = DERIVE per shared-state BE operation：
+   - shared-state 訊號包含 phase/status transition、room/game/session state change、多人 role 詞（host/guest/player/observer/房主/房客/玩家）
+   - 若同一 shared state 有 active actor 與 affected actor，且 raw idea 未明示被動 actor 行為 → 產生 `sync_policy=unknown` 並標 Seam 0 `intent-multi-actor-sync` 題
+   - 若 raw idea 明示自動同步/輪詢/推播 → `sync_policy=auto-sync` 並填 `sync_mechanism`
+   - 若 raw idea 明示刷新/重新進入才更新 → `sync_policy=manual-refresh`
+7. `$brand_signal` = CLASSIFY `$raw` for visual direction lexical markers（editorial / brutalism / luxury / neutral）；缺訊號 → null + Seam 0 `intent-brand-seed` 題
+8. `$composition_draft` = THINK per has-ui op cluster：raw idea 是否明示組合（"在同一頁"／"分步驟"）；缺訊號 ∧ has-ui ops ≥ 2 → 標 Seam 0 `intent-composition` 題
+9. `$clarify_questions` = DERIVE Seam 0 題組 ← 上述各步驟標記之 cic：
    - length(`$raw`) ≤ 10 → 必含 `intent-empty` 題（並 short-circuit 其他題：等使用者回答 intent-empty 後重跑 RP）
    - `$alignment_matrix.coverage == gap` 每筆 → 一道 `intent-coverage-gap` 題
    - `$raw_idea_surplus` 非空每筆 → 一道 `intent-surplus` 題
    - `$nav_topology == unknown` ∧ has-ui ops ≥ 2 → `intent-composition` 題
    - `$actor_signals.ambiguous` 每筆 → 一道 `intent-actor-split` 題
+   - `$multi_actor_sync_draft.sync_policy == unknown` 每筆 → 一道 `intent-multi-actor-sync` 題
    - `$state_priority_draft.missing_signal == true` → `intent-state-priority` 題
    - `$brand_signal == null` → `intent-brand-seed` 題
-9. ASSERT 每題 `category` ∈ fe-intent-contract.md §2 enum；options 至少 2 項並含 `OTHER`
-10. ASSERT 任一 `intent-coverage-gap` 題對應的 `alignment_matrix.intent_decision == unknown`
+10. ASSERT 每題 `category` ∈ fe-intent-contract.md §2 enum；options 至少 2 項並含 `OTHER`
+11. ASSERT 任一 `intent-coverage-gap` 題對應的 `alignment_matrix.intent_decision == unknown`
 
 ---
 
@@ -217,6 +239,7 @@ modeling_element_definition:
    - `fe_intent_bundle.page_compositions` = `$composition_draft.resolved`（unknown 留 placeholder，待 clarify 回填）
    - `fe_intent_bundle.scope_decisions` = derive from `$alignment_matrix.intent_decision`（unknown 視為待答）
    - `fe_intent_bundle.actor_splits` = `$actor_signals.resolved`
+   - `fe_intent_bundle.multi_actor_sync` = `$multi_actor_sync_draft.resolved`
    - `fe_intent_bundle.ux_only_flows` = derive from `$raw_idea_surplus.resolved`
    - `clarify_payload.questions` = `$clarify_questions`
 2. ASSERT `fe_intent_bundle.scope_decisions` length == count(has-ui ops in upstream classification candidate set)；若上游 02 尚未跑，length == count(`$inventory.items` 對應 BE has-ui 訊號最小子集)
@@ -236,6 +259,7 @@ produces:
     page_compositions: []
     scope_decisions: []
     actor_splits: []
+    multi_actor_sync: []
     ux_only_flows: []
   clarify_payload:
     questions: []   # Seam 0 — SKILL.md Phase 2 fire /clarify-loop
