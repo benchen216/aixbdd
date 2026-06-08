@@ -44,7 +44,7 @@ def step_arguments_file(context, relative_path: str):
 @when("resolve_args CLI is run with stdin:")
 def step_run_resolve_args(context):
     proc = subprocess.run(
-        ["python3", str(_CLI)],
+        ["uv", "run", "--quiet", str(_CLI)],
         input=context.text,
         text=True,
         capture_output=True,

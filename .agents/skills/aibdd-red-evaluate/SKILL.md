@@ -38,7 +38,7 @@ metadata:
 
 1. RESOLVE arguments：把本 phase 會引用到的 `${VAR}` 一次綁定，resolver 的 stdout 原樣 EMIT 給用戶；非 0 退出就停下來並透傳 stderr。
    ```bash
-   python3 .claude/skills/aibdd-core/scripts/cli/resolve_args.py <<'EOF'
+   uv run .claude/skills/aibdd-core/scripts/cli/resolve_args.py <<'EOF'
    FEATURE_ARCHIVE_RUNTIME_REF=${FEATURE_ARCHIVE_RUNTIME_REF}
    STEP_DEFINITIONS_RUNTIME_REF=${STEP_DEFINITIONS_RUNTIME_REF}
    EOF

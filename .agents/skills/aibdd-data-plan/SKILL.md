@@ -56,7 +56,7 @@ metadata:
 1. RESOLVE arguments——將本 SOP 引用的 `${VAR}`（**僅本 skill 用到者**）透過 sibling resolver 綁定，並把 resolver stdout（每行一筆 `KEY=value`）原樣 EMIT 給用戶。Resolver 非 0 退出時，停止本 SOP 並把 stderr 透傳給用戶。`${CWD}` 為 shell working directory，不入 manifest。
 
    ```bash
-   python3 .claude/skills/aibdd-core/scripts/cli/resolve_args.py <<'EOF'
+   uv run .claude/skills/aibdd-core/scripts/cli/resolve_args.py <<'EOF'
    ACTIVITIES_DIR=${ACTIVITIES_DIR}
    AIBDD_ARGUMENTS_PATH=${AIBDD_ARGUMENTS_PATH}
    BOUNDARY_YML=${BOUNDARY_YML}

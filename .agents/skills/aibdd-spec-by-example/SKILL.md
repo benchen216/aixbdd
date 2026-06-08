@@ -62,7 +62,7 @@ Tier 0 範例（語意範本；實務請用 `TODOCREATE`／`TASKCREATE`（或等
 0. RESOLVE arguments（與 `/aibdd-discovery` sub-SOP 同款）——在 `${CWD}`（shell working directory）執行 sibling resolver，固定讀取 `${AIBDD_ARGUMENTS_PATH}`（即 `.aibdd/arguments.yml`）。將 resolver stdout（每行一筆 `KEY=value`）原樣 EMIT 給用戶。Resolver 非 0 退出時，停止本 skill 並把 stderr 透傳給用戶；若訊息為 arguments.yml not found，改以語意回報：「我在 ${CWD} 底下找不到 `.aibdd/arguments.yml`，你是否已經執行過 /aibdd-kickoff 了？」禁止以 workspace grep／Glob 取代本步的 READ 或 resolver。
 
    ```bash
-   python3 .claude/skills/aibdd-core/scripts/cli/resolve_args.py <<'EOF'
+   uv run .claude/skills/aibdd-core/scripts/cli/resolve_args.py <<'EOF'
    AIBDD_ARGUMENTS_PATH=${AIBDD_ARGUMENTS_PATH}
    FEATURE_SPECS_DIR=${FEATURE_SPECS_DIR}
    PROJECT_SPEC_LANGUAGE=${PROJECT_SPEC_LANGUAGE}
